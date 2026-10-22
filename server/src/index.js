@@ -4,21 +4,38 @@ import mongoose from "mongoose";
 import cors from "cors";
 import helmet from "helmet";
 import bcrypt from "bcryptjs";
+import path from "path";
+import { fileURLToPath } from "url";
 import User from "./models/User.js";
 import authRoutes from "./routes/auth.js";
 import shipmentRoutes from "./routes/shipments.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const isProd = process.env.NODE_ENV === "production";
+
 const app = express();
 app.disable("x-powered-by");
-app.use(helmet());
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173" }));
+app.use(helmet({ contentSecurityPolicy: false }));
+if (!isProd) {
+  app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173" }));
+}
 app.use(express.json({ limit: "100kb" }));
 
+// API routes
 app.get("/api/health", (_req, res) => res.json({ status: "ok", service: "KDM Logistics API" }));
 app.use("/api/auth", authRoutes);
 app.use("/api/shipments", shipmentRoutes);
 
-app.use((req, res) => res.status(404).json({ message: "API route not found." }));
+// Serve React frontend in production
+if (isProd) {
+  const clientDist = path.resolve(__dirname, "../../client/dist");
+  app.use(express.static(clientDist));
+  // SPA fallback — send index.html for any non-API route
+  app.get("*", (_req, res) => res.sendFile(path.join(clientDist, "index.html")));
+} else {
+  app.use((_req, res) => res.status(404).json({ message: "API route not found." }));
+}
+
 app.use((error, _req, res, _next) => {
   console.error(error);
   if (error?.code === 11000) return res.status(409).json({ message: "That record already exists." });
